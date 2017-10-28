@@ -83,6 +83,13 @@ struct Dataset {
     QString experimentname;
     QUrl url;
     QString token;
+    // Layer parameters
+    QString layerName{"unnamed"};
+    bool visible{true};
+    float opacity{1.0f};
+    float rangeDelta;
+    float bias;
+    bool linearFiltering;
 
     static QList<Dataset> datasets;
     static auto & current() { return datasets.front(); }
