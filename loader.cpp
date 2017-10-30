@@ -201,7 +201,6 @@ std::vector<CoordOfCube> Loader::Worker::DcoiFromPos(const CoordOfCube & current
 
 Loader::Worker::Worker(const decltype(datasets) & layers)
     : slotDownload(static_cast<std::size_t>(layers.size())), slotDecompression(static_cast<std::size_t>(layers.size()))
-//    , slotChunk{static_cast<std::size_t>(datasets.size())}, freeSlots{static_cast<std::size_t>(datasets.size())}
     , slotChunk(static_cast<std::size_t>(layers.size())), freeSlots(static_cast<std::size_t>(layers.size()))
     , datasets{layers}
     , OcModifiedCacheQueue(static_cast<std::size_t>(std::log2(Dataset::current().highestAvailableMag)+1))
@@ -215,7 +214,6 @@ Loader::Worker::Worker(const decltype(datasets) & layers)
     // datacube, we load it into a location from this list. Whenever a
     // datacube in memory becomes invalid, we add the pointer to its
     // memory location back into this list.
-    qDebug() << freeSlots.size();
     for (int layerId{0}; layerId < layers.size(); ++layerId) {
         state->cube2Pointer.emplace_back(std::log2(layers[layerId].highestAvailableMag)+1);
         const auto overlayFactor = layers[layerId].isOverlay() ? OBJID_BYTES : 1;
@@ -224,7 +222,6 @@ Loader::Worker::Worker(const decltype(datasets) & layers)
             slotChunk[layerId].emplace_back(state->cubeBytes * overlayFactor, 0);// zero init chunk of chars
             freeSlots[layerId].emplace_back(slotChunk[layerId].back().data());// append newest element
         }
-        qDebug() << freeSlots[layerId].size();
     }
 }
 
