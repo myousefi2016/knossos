@@ -738,8 +738,6 @@ void ViewportOrtho::renderViewport(const RenderOptions &options) {
         if (!options.nodePicking) {
             glEnable(GL_TEXTURE_2D);
             texture.texHandle.bind();
-            std::vector<char> texData(4 * std::pow(state->viewerState->texEdgeLength, 2), 0);
-            texture.texHandle.setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, texData.data());
             glPushMatrix();
             glTranslatef(isoCurPos.x + offset.x, isoCurPos.y + offset.y, isoCurPos.z + offset.z);
             glBegin(GL_QUADS);
