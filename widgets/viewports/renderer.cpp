@@ -796,7 +796,7 @@ void ViewportOrtho::renderViewport(const RenderOptions &options) {
             slice(texture[0], n);
         }
         if (options.drawOverlay && state->viewerState->layerVisibility[1]) {
-            //slice(texture[1], n);
+            slice(texture[1], n);
         }
     }
 
