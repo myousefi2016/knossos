@@ -451,9 +451,6 @@ bool Viewer::vpGenerateTexture(ViewportOrtho & vp) {
         vpGenerateTexture(static_cast<ViewportArb&>(vp));
         return true;
     }
-    for (auto & elem : vp.resliceNecessary) {
-        elem = false;
-    }
     const auto cubeEdgeLen = Dataset::current().cubeEdgeLength;
     const CoordInCube currentPosition_dc = state->viewerState->currentPosition.insideCube(cubeEdgeLen, Dataset::current().magnification);
 
@@ -477,6 +474,10 @@ bool Viewer::vpGenerateTexture(ViewportOrtho & vp) {
     // We iterate over the texture with x and y being in a temporary coordinate
     // system local to this texture.
     for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+        if (!vp.resliceNecessary[layerId]) {
+            continue;
+        }
+        vp.resliceNecessary[layerId] = false;
         const CoordOfCube upperLeftDc = Coordinate(vp.texture[layerId].leftUpperPxInAbsPx).cube(cubeEdgeLen, Dataset::datasets[layerId].magnification);
         for(int x_dc = 0; x_dc < state->M; x_dc++) {
             for(int y_dc = 0; y_dc < state->M; y_dc++) {
@@ -512,32 +513,30 @@ bool Viewer::vpGenerateTexture(ViewportOrtho & vp) {
                 Coordinate cubePosInAbsPx = {currentDc.x * Dataset::datasets[layerId].magnification * cubeEdgeLen,
                                              currentDc.y * Dataset::datasets[layerId].magnification * cubeEdgeLen,
                                              currentDc.z * Dataset::datasets[layerId].magnification * cubeEdgeLen};
-                if (vp.resliceNecessary[layerId]) {
-                    vp.texture[layerId].texHandle.bind();
+                // This is used to index into the texture. overlayData[index] is the first
+                // byte of the datacube slice at position (x_dc, y_dc) in the texture.
+                const int index = texIndex(x_dc, y_dc, 4, &(vp.texture[layerId]));
 
-                    // This is used to index into the texture. overlayData[index] is the first
-                    // byte of the datacube slice at position (x_dc, y_dc) in the texture.
-                    const int index = texIndex(x_dc, y_dc, 4, &(vp.texture[layerId]));
-
-                    if (cube != nullptr) {
-                        if (Dataset::datasets[layerId].isOverlay()) {
+                if (cube != nullptr) {
+                    if (Dataset::datasets[layerId].isOverlay()) {
                         ocSliceExtract(reinterpret_cast<std::uint64_t *>(cube) + slicePositionWithinCube, cubePosInAbsPx, texData.data() + index, vp);
-                        } else {
-                            dcSliceExtract(reinterpret_cast<std::uint8_t *>(cube) + slicePositionWithinCube, cubePosInAbsPx, texData.data() + index, vp, state->viewerState->datasetAdjustmentOn);
-                        }
                     } else {
-                        std::fill(std::begin(texData), std::end(texData), 0);
+                        dcSliceExtract(reinterpret_cast<std::uint8_t *>(cube) + slicePositionWithinCube, cubePosInAbsPx, texData.data() + index, vp, state->viewerState->datasetAdjustmentOn);
                     }
-                    glTexSubImage2D(GL_TEXTURE_2D,
-                                    0,
-                                    x_px,
-                                    y_px,
-                                    cubeEdgeLen,
-                                    cubeEdgeLen,
-                                    GL_RGBA,
-                                    GL_UNSIGNED_BYTE,
-                                    texData.data() + index);
+                } else {
+                    std::fill(std::begin(texData), std::end(texData), 0);
                 }
+                vp.texture[layerId].texHandle.bind();
+                glTexSubImage2D(GL_TEXTURE_2D,
+                                0,
+                                x_px,
+                                y_px,
+                                cubeEdgeLen,
+                                cubeEdgeLen,
+                                GL_RGBA,
+                                GL_UNSIGNED_BYTE,
+                                texData.data() + index);
+                vp.texture[layerId].texHandle.release();
             }
         }
     }
@@ -718,6 +717,8 @@ void Viewer::vpGenerateTexture(ViewportArb &vp) {
                             GL_RGBA,
                             GL_UNSIGNED_BYTE,
                         texData.data());
+
+            vp.texture[layerId].texHandle.release();
         }
     }
 
