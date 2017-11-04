@@ -78,6 +78,7 @@ void ViewportArb::updateOverlayTexture() {
         }
     }
     texture[1].texHandle.bind();
-    texture[1].texHandle.setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, texData.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, texData.data());
+//    texture[1].texHandle.setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, texData.data());
     texture[1].texHandle.release();
 }
