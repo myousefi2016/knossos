@@ -926,7 +926,6 @@ void Viewer::applyTextureFilterSetting(const QOpenGLTexture::Filter texFiltering
         }
         orthoVP.resetTexture();
     });
-    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Viewer::updateCurrentPosition() {
