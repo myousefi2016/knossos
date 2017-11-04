@@ -54,7 +54,7 @@ void ViewportArb::paintGL() {
 }
 
 void ViewportArb::updateOverlayTexture() {
-    if (!resliceNecessary[1]) {
+    if (resliceNecessary.size() < 2 || !resliceNecessary[1]) {
         return;
     }
     resliceNecessary[1] = false;
