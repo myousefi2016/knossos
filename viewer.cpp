@@ -661,7 +661,7 @@ void Viewer::setDefaultVPSizeAndPos(const bool on) {
 
 void Viewer::vpGenerateTexture(ViewportArb &vp) {
     for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
-        if (Dataset::datasets[layerId].isOverlay()) {
+        if (!Dataset::datasets[layerId].isOverlay()) {
             vp.resliceNecessary[layerId] = false;
 
             // Load the texture for a viewport by going through all relevant datacubes and copying slices

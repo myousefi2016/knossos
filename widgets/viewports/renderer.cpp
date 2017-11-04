@@ -1809,7 +1809,7 @@ void Viewport3D::renderArbitrarySlicePane(ViewportOrtho & vp, const RenderOption
 
     state->viewer->vpGenerateTexture(vp);// update texture before use
     for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
-        if (state->viewerState->layerVisibility[layerId] && (Dataset::datasets[layerId].isOverlay() || !options.drawOverlay)) {
+        if (state->viewerState->layerVisibility[layerId] && (!Dataset::datasets[layerId].isOverlay() || options.drawOverlay)) {
             auto & texture = vp.texture[layerId];
             texture.texHandle.bind();
             glBegin(GL_QUADS);
