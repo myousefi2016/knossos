@@ -320,14 +320,7 @@ bool DatasetLoadWidget::loadDataset(const boost::optional<bool> loadOverlay, QUr
     }
     Dataset::datasets = layers;
 
-    state->mainWindow->forEachOrthoVPDo([](auto & vp){
-        vp.resliceNecessary = decltype(vp.resliceNecessary)(static_cast<std::size_t>(Dataset::datasets.size()));
-        vp.texture = decltype(vp.texture)(static_cast<std::size_t>(Dataset::datasets.size()));
-        vp.resetTexture();
-    });
-    state->viewerState->layerVisibility = std::vector<bool>(Dataset::datasets.size(), true);
-
-    state->viewer->resizeTexEdgeLength(cubeEdgeLen, state->M);
+    state->viewer->resizeTexEdgeLength(cubeEdgeLen, state->M, Dataset::datasets.size());// resets textures
 
     applyGeometrySettings();
 
@@ -432,7 +425,7 @@ void DatasetLoadWidget::loadSettings() {
     if (QApplication::arguments().filter("overlay").empty()) {//if not provided by cmdline
         Dataset::current().overlay = settings.value(DATASET_OVERLAY, false).toBool();
     }
-    state->viewer->resizeTexEdgeLength(cubeEdgeLen, state->M);
+    state->viewer->resizeTexEdgeLength(cubeEdgeLen, state->M, Dataset::datasets.size());
 
     cubeEdgeSpin.setValue(cubeEdgeLen);
     fovSpin.setCubeEdge(cubeEdgeLen);

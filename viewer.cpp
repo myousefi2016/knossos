@@ -1225,14 +1225,19 @@ void Viewer::resetRotation() {
     viewportArb->sendCursorPosition();
 }
 
-void Viewer::resizeTexEdgeLength(const int cubeEdge, const int superCubeEdge) {
+void Viewer::resizeTexEdgeLength(const int cubeEdge, const int superCubeEdge, const int layerCount) {
     int newTexEdgeLength = 512;
     while (newTexEdgeLength < cubeEdge * superCubeEdge) {
         newTexEdgeLength *= 2;
     }
-    if (newTexEdgeLength != state->viewerState->texEdgeLength) {
+    if (newTexEdgeLength != state->viewerState->texEdgeLength || layerCount != viewportXY->texture.size()) {
         qDebug() << QString("cubeEdge = %1, sCubeEdge = %2, newTex = %3 (%4)").arg(cubeEdge).arg(superCubeEdge).arg(newTexEdgeLength).arg(state->viewerState->texEdgeLength).toStdString().c_str();
         viewerState.texEdgeLength = newTexEdgeLength;
+        viewerState.layerVisibility = std::vector<bool>(Dataset::datasets.size(), true);
+        window->forEachOrthoVPDo([](ViewportOrtho & vp) {
+            vp.resliceNecessary = decltype(vp.resliceNecessary)(static_cast<std::size_t>(Dataset::datasets.size()));
+            vp.texture = decltype(vp.texture)(static_cast<std::size_t>(Dataset::datasets.size()));
+        });
         window->resetTextureProperties();
         window->forEachOrthoVPDo([](ViewportOrtho & vp) {
             vp.resetTexture();
