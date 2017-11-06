@@ -119,7 +119,7 @@ float PythonProxy::getMovementAreaFactor() {
 }
 
 void PythonProxy::oc_reslice_notify_all(QList<int> coord) {
-    state->viewer->oc_reslice_notify_all(Coordinate(coord));
+    state->viewer->reslice_notify_all(1, Coordinate(coord));// FIXME
 }
 
 int PythonProxy::loaderLoadingNr() {

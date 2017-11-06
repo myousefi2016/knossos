@@ -54,10 +54,10 @@ void ViewportArb::paintGL() {
 }
 
 void ViewportArb::updateOverlayTexture() {
-    if (!ocResliceNecessary) {
+    if (!resliceNecessary[1]) {
         return;
     }
-    ocResliceNecessary = false;
+    resliceNecessary[1] = false;
     const int width = (state->M - 1) * Dataset::current().cubeEdgeLength / std::sqrt(2);
     const int height = width;
     const auto begin = leftUpperPxInAbsPx_float;
