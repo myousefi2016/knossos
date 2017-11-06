@@ -56,8 +56,6 @@ constexpr const int DEFAULT_VP_SIZE = 350;
 struct viewportTexture {
     //Handles for OpenGl
     QOpenGLTexture texHandle{QOpenGLTexture::Target2D};
-    QOpenGLTexture::Filter textureFilter{QOpenGLTexture::Nearest};
-
     //The absPx coordinate of the upper left corner of the texture actually stored in *texture
     floatCoordinate leftUpperPxInAbsPx;
     GLsizei size;

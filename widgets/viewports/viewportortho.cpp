@@ -123,19 +123,16 @@ void ViewportOrtho::resetTexture() {
     if (!context()) {
         return;
     }
-    for (auto & elem : texture) {
-        elem.texHandle.~QOpenGLTexture();
-        new (&elem.texHandle) decltype(elem.texHandle){QOpenGLTexture::Target2D};
-        elem.texHandle.create();
-        elem.texHandle.bind();
+    for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+        auto & elem = texture[layerId];
+        elem.texHandle.destroy();
         elem.texHandle.setSize(elem.size, elem.size);
-        elem.texHandle.setMinificationFilter(elem.textureFilter);
-        elem.texHandle.setMagnificationFilter(elem.textureFilter);
         elem.texHandle.setFormat(QOpenGLTexture::RGBA8_UNorm);
         elem.texHandle.setWrapMode(QOpenGLTexture::ClampToEdge);
         elem.texHandle.allocateStorage();
         elem.texHandle.release();
     }
+    state->viewer->applyTextureFilterSetting();
 }
 
 void ViewportOrtho::sendCursorPosition() {

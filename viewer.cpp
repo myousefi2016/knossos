@@ -917,14 +917,23 @@ void Viewer::run() {
     window->updateTitlebar(); //display changes after filename
 }
 
+void Viewer::applyTextureFilterSetting() {
+    applyTextureFilterSetting(viewerState.textureFilter);
+}
+
 void Viewer::applyTextureFilterSetting(const QOpenGLTexture::Filter texFiltering) {
-    window->forEachOrthoVPDo([&texFiltering](ViewportOrtho & orthoVP) {
+    viewerState.textureFilter = texFiltering;
+    window->forEachOrthoVPDo([](ViewportOrtho & orthoVP) {
         for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
-            if (!Dataset::datasets[layerId].isOverlay()) {
-                orthoVP.texture[layerId].textureFilter = texFiltering;
+            auto & elem = orthoVP.texture[layerId];
+            if (elem.texHandle.isCreated()) {
+                if (!Dataset::datasets[layerId].isOverlay()) {
+                    elem.texHandle.setMinMagFilters(state->viewerState->textureFilter, state->viewerState->textureFilter);
+                } else {// overlay shall have sharp edges
+                    elem.texHandle.setMinMagFilters(QOpenGLTexture::Nearest, QOpenGLTexture::Nearest);
+                }
             }
         }
-        orthoVP.resetTexture();
     });
 }
 

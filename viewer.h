@@ -64,6 +64,7 @@ struct ViewerState {
     ViewerState();
 
     int texEdgeLength = 512;
+    QOpenGLTexture::Filter textureFilter{QOpenGLTexture::Nearest};
     // don't jump between mags on zooming
     bool datasetMagLock;
     // Current position of the user crosshair.
@@ -237,6 +238,7 @@ public slots:
     void userMoveClear();
     void recalcTextureOffsets();
     void calcDisplayedEdgeLength();
+    void applyTextureFilterSetting();
     void applyTextureFilterSetting(const QOpenGLTexture::Filter texFiltering);
     void run();
     void loader_notify(const UserMoveType userMoveType = USERMOVE_NEUTRAL, const floatCoordinate & direction = {0, 0, 0});
