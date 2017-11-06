@@ -251,12 +251,15 @@ void MainWindow::updateCursorLabel(const Coordinate & position, const ViewportTy
 void MainWindow::resetTextureProperties() {
     //reset viewerState texture properties
     forEachOrthoVPDo([](ViewportOrtho & orthoVP) {
-        orthoVP.texture.size = state->viewerState->texEdgeLength;
-        orthoVP.texture.texUnitsPerDataPx = (1.0 / orthoVP.texture.size) / Dataset::current().magnification;
-        orthoVP.texture.FOV = 1;
-        orthoVP.texture.usedSizeInCubePixels = (state->M - 1) * Dataset::current().cubeEdgeLength;
-        if (orthoVP.viewportType == VIEWPORT_ARBITRARY) {
-            orthoVP.texture.usedSizeInCubePixels /= std::sqrt(2);
+        for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+            auto & texture = orthoVP.texture[layerId];
+            texture.size = state->viewerState->texEdgeLength;
+            texture.texUnitsPerDataPx = (1.0 / texture.size) / Dataset::datasets[layerId].magnification;
+            texture.FOV = 1;
+            texture.usedSizeInCubePixels = (state->M - 1) * Dataset::datasets[layerId].cubeEdgeLength;
+            if (orthoVP.viewportType == VIEWPORT_ARBITRARY) {
+                texture.usedSizeInCubePixels /= std::sqrt(2);
+            }
         }
     });
 }

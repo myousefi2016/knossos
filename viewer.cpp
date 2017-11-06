@@ -158,7 +158,7 @@ float Viewer::highestScreenPxXPerDataPx(const bool ofCurrentMag) {
     const float texUnitsPerDataPx = 1. / viewerState.texEdgeLength / (ofCurrentMag ? lowestMag() : Dataset::current().lowestAvailableMag);
     auto * vp = viewportXY;
     float FOVinDCs = static_cast<float>(state->M) - 1.f;
-    float displayedEdgeLen = (FOVinDCs * VPZOOMMAX * Dataset::current().cubeEdgeLength) / vp->texture.size;
+    float displayedEdgeLen = (FOVinDCs * VPZOOMMAX * Dataset::current().cubeEdgeLength) / vp->texture[0].size;// FIXME
     displayedEdgeLen = (std::ceil(displayedEdgeLen / 2. / texUnitsPerDataPx) * texUnitsPerDataPx) * 2.;
     return vp->edgeLength / (displayedEdgeLen / texUnitsPerDataPx);
 }
@@ -167,7 +167,7 @@ float Viewer::lowestScreenPxXPerDataPx(const bool ofCurrentMag) {
     const float texUnitsPerDataPx = 1. / viewerState.texEdgeLength / (ofCurrentMag ? highestMag() : Dataset::current().highestAvailableMag);
     auto * vp = viewportXY;
     float FOVinDCs = static_cast<float>(state->M) - 1.f;
-    float displayedEdgeLen = (FOVinDCs * Dataset::current().cubeEdgeLength) / vp->texture.size;
+    float displayedEdgeLen = (FOVinDCs * Dataset::current().cubeEdgeLength) / vp->texture[0].size;// FIXME
     displayedEdgeLen = (std::ceil(displayedEdgeLen / 2. / texUnitsPerDataPx) * texUnitsPerDataPx) * 2.;
     return vp->edgeLength / (displayedEdgeLen / texUnitsPerDataPx);
 }
@@ -186,7 +186,7 @@ void Viewer::setMagnificationLock(const bool locked) {
             updateDatasetMag(newMag);
             float newFOV = viewportXY->screenPxXPerDataPxForZoomFactor(1.f) / viewportXY->screenPxXPerDataPx;
             window->forEachOrthoVPDo([&newFOV](ViewportOrtho & orthoVP) {
-                orthoVP.texture.FOV = newFOV;
+                orthoVP.texture[0].FOV = newFOV;// FIXME
             });
         }
     }
@@ -448,9 +448,9 @@ bool Viewer::vpGenerateTexture(ViewportOrtho & vp) {
         vpGenerateTexture(static_cast<ViewportArb&>(vp));
         return true;
     }
-    const bool dc_reslice = vp.resliceNecessary[0];
-    const bool oc_reslice = vp.resliceNecessary[1];
-    vp.resliceNecessary[0] = vp.resliceNecessary[1] = false;
+    for (auto & elem : vp.resliceNecessary) {
+        elem = false;
+    }
     const auto cubeEdgeLen = Dataset::current().cubeEdgeLength;
     const CoordInCube currentPosition_dc = state->viewerState->currentPosition.insideCube(cubeEdgeLen, Dataset::current().magnification);
 
@@ -470,97 +470,71 @@ bool Viewer::vpGenerateTexture(ViewportOrtho & vp) {
         return false;
     }
 
-    const CoordOfCube upperLeftDc = Coordinate(vp.texture.leftUpperPxInAbsPx).cube(cubeEdgeLen, Dataset::current().magnification);
-
     std::vector<std::uint8_t> texData(4 * std::pow(state->viewerState->texEdgeLength, 2));
     // We iterate over the texture with x and y being in a temporary coordinate
     // system local to this texture.
-    for(int x_dc = 0; x_dc < state->M; x_dc++) {
-        for(int y_dc = 0; y_dc < state->M; y_dc++) {
-            const int x_px = x_dc * cubeEdgeLen;
-            const int y_px = y_dc * cubeEdgeLen;
+    for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+        const CoordOfCube upperLeftDc = Coordinate(vp.texture[layerId].leftUpperPxInAbsPx).cube(cubeEdgeLen, Dataset::datasets[layerId].magnification);
+        for(int x_dc = 0; x_dc < state->M; x_dc++) {
+            for(int y_dc = 0; y_dc < state->M; y_dc++) {
+                const int x_px = x_dc * cubeEdgeLen;
+                const int y_px = y_dc * cubeEdgeLen;
 
-            CoordOfCube currentDc;
+                CoordOfCube currentDc;
 
-            switch(vp.viewportType) {
-            // With an x/y-coordinate system in a viewport, we get the following
-            // mapping from viewport (slice) coordinates to global (dc)
-            // coordinates:
-            // XY-slice: x local is x global, y local is y global
-            // XZ-slice: x local is x global, y local is z global
-            // ZY-slice: x local is z global, y local is y global.
-            case VIEWPORT_XY:
-                currentDc = {upperLeftDc.x + x_dc, upperLeftDc.y + y_dc, upperLeftDc.z};
-                break;
-            case VIEWPORT_XZ:
-                currentDc = {upperLeftDc.x + x_dc, upperLeftDc.y, upperLeftDc.z + y_dc};
-                break;
-            case VIEWPORT_ZY:
-                currentDc = {upperLeftDc.x, upperLeftDc.y + y_dc, upperLeftDc.z + x_dc};
-                break;
-            default:
-                qDebug("No such slice type (%d) in vpGenerateTexture.", vp.viewportType);
-            }
-            state->protectCube2Pointer.lock();
-            void * const datacube = Coordinate2BytePtr_hash_get_or_fail(state->Dc2Pointer[int_log(Dataset::current().magnification)], currentDc);
-            void * const overlayCube = Coordinate2BytePtr_hash_get_or_fail(state->Oc2Pointer[int_log(Dataset::current().magnification)], currentDc);
-            state->protectCube2Pointer.unlock();
-
-            // Take care of the data textures.
-
-            Coordinate cubePosInAbsPx = {currentDc.x * Dataset::current().magnification * cubeEdgeLen,
-                                         currentDc.y * Dataset::current().magnification * cubeEdgeLen,
-                                         currentDc.z * Dataset::current().magnification * cubeEdgeLen};
-            if (dc_reslice) {
-                glBindTexture(GL_TEXTURE_2D, vp.texture.texHandle);
-
-                // This is used to index into the texture. overlayData[index] is the first
-                // byte of the datacube slice at position (x_dc, y_dc) in the texture.
-                const int index = texIndex(x_dc, y_dc, 3, &(vp.texture));
-
-                if (datacube != nullptr) {
-                    dcSliceExtract(reinterpret_cast<std::uint8_t *>(datacube) + slicePositionWithinCube,
-                                   cubePosInAbsPx,
-                                   texData.data() + index,
-                                   vp,
-                                   state->viewerState->datasetAdjustmentOn);
-                } else {
-                    std::fill(std::begin(texData), std::end(texData), 0);
+                switch(vp.viewportType) {
+                // With an x/y-coordinate system in a viewport, we get the following
+                // mapping from viewport (slice) coordinates to global (dc)
+                // coordinates:
+                // XY-slice: x local is x global, y local is y global
+                // XZ-slice: x local is x global, y local is z global
+                // ZY-slice: x local is z global, y local is y global.
+                case VIEWPORT_XY:
+                    currentDc = {upperLeftDc.x + x_dc, upperLeftDc.y + y_dc, upperLeftDc.z};
+                    break;
+                case VIEWPORT_XZ:
+                    currentDc = {upperLeftDc.x + x_dc, upperLeftDc.y, upperLeftDc.z + y_dc};
+                    break;
+                case VIEWPORT_ZY:
+                    currentDc = {upperLeftDc.x, upperLeftDc.y + y_dc, upperLeftDc.z + x_dc};
+                    break;
+                default:
+                    qDebug("No such slice type (%d) in vpGenerateTexture.", vp.viewportType);
                 }
-                glTexSubImage2D(GL_TEXTURE_2D,
-                                0,
-                                x_px,
-                                y_px,
-                                cubeEdgeLen,
-                                cubeEdgeLen,
-                                GL_RGB,
-                                GL_UNSIGNED_BYTE,
-                                texData.data() + index);
-            }
-            //Take care of the overlay textures.
-            if (Dataset::current().overlay && oc_reslice) {
-                glBindTexture(GL_TEXTURE_2D, vp.texture.overlayHandle);
-                // This is used to index into the texture. texData[index] is the first
-                // byte of the datacube slice at position (x_dc, y_dc) in the texture.
-                const int index = texIndex(x_dc, y_dc, 4, &(vp.texture));
+                state->protectCube2Pointer.lock();
+                void * const cube = Coordinate2BytePtr_hash_get_or_fail(state->cube2Pointer[layerId][int_log(Dataset::current().magnification)], currentDc);
+                state->protectCube2Pointer.unlock();
 
-                if (overlayCube != nullptr) {
-                    ocSliceExtract(reinterpret_cast<std::uint64_t *>(overlayCube) + slicePositionWithinCube,
-                                   cubePosInAbsPx,
-                                   texData.data() + index,
-                                   vp);
-                } else {
-                    std::fill(std::begin(texData), std::end(texData), 0);
+                // Take care of the data textures.
+                Coordinate cubePosInAbsPx = {currentDc.x * Dataset::datasets[layerId].magnification * cubeEdgeLen,
+                                             currentDc.y * Dataset::datasets[layerId].magnification * cubeEdgeLen,
+                                             currentDc.z * Dataset::datasets[layerId].magnification * cubeEdgeLen};
+                if (vp.resliceNecessary[layerId]) {
+                    vp.texture[layerId].texHandle.bind();
+
+                    // This is used to index into the texture. overlayData[index] is the first
+                    // byte of the datacube slice at position (x_dc, y_dc) in the texture.
+                    const int index = texIndex(x_dc, y_dc, 4, &(vp.texture[layerId]));
+
+                    if (cube != nullptr) {
+                        if (Dataset::datasets[layerId].isOverlay()) {
+                            ocSliceExtract(reinterpret_cast<std::uint64_t *>(cube) + slicePositionWithinCube * OBJID_BYTES, cubePosInAbsPx, texData.data() + index, vp);
+                        } else {
+                            dcSliceExtract(reinterpret_cast<std::uint8_t *>(cube) + slicePositionWithinCube, cubePosInAbsPx, texData.data() + index, vp, state->viewerState->datasetAdjustmentOn);
+                        }
+                    } else {
+                        std::fill(std::begin(texData), std::end(texData), 0);
+                    }
+                    glTexSubImage2D(GL_TEXTURE_2D,
+                                    0,
+                                    x_px,
+                                    y_px,
+                                    cubeEdgeLen,
+                                    cubeEdgeLen,
+                                    GL_RGBA,
+                                    GL_UNSIGNED_BYTE,
+                                    texData.data() + index);
                 }
-                glTexSubImage2D(GL_TEXTURE_2D,
-                                0,
-                                x_px,
-                                y_px,
-                                cubeEdgeLen,
-                                cubeEdgeLen,
-                                GL_RGBA,
-                                GL_UNSIGNED_BYTE,
-                                texData.data() + index);
             }
         }
     }
@@ -587,7 +561,7 @@ void Viewer::arbCubes(ViewportArb & vp) {
 
     const auto gpusupercube = (state->M - 1) * Dataset::current().cubeEdgeLength / gpucubeedge + 1;//remove cpu overlap and add gpu overlap
     const auto scroot = (state->viewerState->currentPosition / gpucubeedge) - gpusupercube / 2;
-    floatCoordinate root = vp.texture.leftUpperPxInAbsPx / Dataset::current().magnification;
+    floatCoordinate root = vp.texture[0].leftUpperPxInAbsPx / Dataset::current().magnification;// FIXME
     for (int z = 0; z < gpusupercube; ++z)
     for (int y = 0; y < gpusupercube; ++y)
     for (int x = 0; x < gpusupercube; ++x) {
@@ -686,110 +660,122 @@ void Viewer::setDefaultVPSizeAndPos(const bool on) {
 }
 
 void Viewer::vpGenerateTexture(ViewportArb &vp) {
-    if (!vp.resliceNecessary[0]) {
-        return;
-    }
-    vp.resliceNecessary[0] = false;
+    for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+        if (Dataset::datasets[layerId].isOverlay()) {
+            vp.resliceNecessary[layerId] = false;
 
-    // Load the texture for a viewport by going through all relevant datacubes and copying slices
-    // from those cubes into the texture.
-    floatCoordinate currentPxInDc_float, rowPx_float, currentPx_float;
+            // Load the texture for a viewport by going through all relevant datacubes and copying slices
+            // from those cubes into the texture.
+            floatCoordinate currentPxInDc_float, rowPx_float, currentPx_float;
 
-    rowPx_float = vp.texture.leftUpperPxInAbsPx / Dataset::current().magnification;
-    currentPx_float = rowPx_float;
+            rowPx_float = vp.texture[layerId].leftUpperPxInAbsPx / Dataset::current().magnification;
+            currentPx_float = rowPx_float;
 
-    std::vector<std::uint8_t> texData(3 * std::pow(state->viewerState->texEdgeLength, 2));
+            std::vector<std::uint8_t> texData(3 * std::pow(state->viewerState->texEdgeLength, 2));// RGBA
 
-    glBindTexture(GL_TEXTURE_2D, vp.texture.texHandle);
+            vp.texture[layerId].texHandle.bind();
 
-    int s = 0, t = 0, t_old = 0;
-    while(s < vp.texture.usedSizeInCubePixels) {
-        t = 0;
-        while(t < vp.texture.usedSizeInCubePixels) {
-            Coordinate currentPx = {roundFloat(currentPx_float.x), roundFloat(currentPx_float.y), roundFloat(currentPx_float.z)};
-            Coordinate currentDc = currentPx / Dataset::current().cubeEdgeLength;
+            int s = 0, t = 0, t_old = 0;
+            while(s < vp.texture[layerId].usedSizeInCubePixels) {
+                t = 0;
+                while(t < vp.texture[layerId].usedSizeInCubePixels) {
+                    Coordinate currentPx = {roundFloat(currentPx_float.x), roundFloat(currentPx_float.y), roundFloat(currentPx_float.z)};
+                    Coordinate currentDc = currentPx / Dataset::current().cubeEdgeLength;
 
-            if(currentPx.x < 0) { currentDc.x -= 1; }
-            if(currentPx.y < 0) { currentDc.y -= 1; }
-            if(currentPx.z < 0) { currentDc.z -= 1; }
+                    if(currentPx.x < 0) { currentDc.x -= 1; }
+                    if(currentPx.y < 0) { currentDc.y -= 1; }
+                    if(currentPx.z < 0) { currentDc.z -= 1; }
 
-            state->protectCube2Pointer.lock();
-            void * const datacube = Coordinate2BytePtr_hash_get_or_fail(state->Dc2Pointer[int_log(Dataset::current().magnification)], {currentDc.x, currentDc.y, currentDc.z});
-            state->protectCube2Pointer.unlock();
+                    state->protectCube2Pointer.lock();
+                    void * const datacube = Coordinate2BytePtr_hash_get_or_fail(state->cube2Pointer[layerId][int_log(Dataset::datasets[layerId].magnification)], {currentDc.x, currentDc.y, currentDc.z});
+                    state->protectCube2Pointer.unlock();
 
-            currentPxInDc_float = currentPx_float - currentDc * Dataset::current().cubeEdgeLength;
-            t_old = t;
+                    currentPxInDc_float = currentPx_float - currentDc * Dataset::current().cubeEdgeLength;
+                    t_old = t;
 
-            dcSliceExtract(reinterpret_cast<std::uint8_t *>(datacube),
-                           &currentPxInDc_float,
-                           texData.data(),
-                           s, &t,
-                           vp.v2,
-                           state->viewerState->datasetAdjustmentOn, vp.texture.usedSizeInCubePixels);
-            currentPx_float = currentPx_float - vp.v2 * (t - t_old);
+                    dcSliceExtract(reinterpret_cast<std::uint8_t *>(datacube),
+                                   &currentPxInDc_float,
+                                   texData.data(),
+                                   s, &t,
+                                   vp.v2,
+                                   state->viewerState->datasetAdjustmentOn, vp.texture[layerId].usedSizeInCubePixels);
+                    currentPx_float = currentPx_float - vp.v2 * (t - t_old);
+                }
+                s++;
+                rowPx_float += vp.v1;
+                currentPx_float = rowPx_float;
+            }
+
+            glTexSubImage2D(GL_TEXTURE_2D,
+                            0,
+                            0,
+                            0,
+                            state->M*Dataset::current().cubeEdgeLength,
+                            state->M*Dataset::current().cubeEdgeLength,
+                            GL_RGBA,
+                            GL_UNSIGNED_BYTE,
+                        texData.data());
         }
-        s++;
-        rowPx_float += vp.v1;
-        currentPx_float = rowPx_float;
     }
-
-    glTexSubImage2D(GL_TEXTURE_2D,
-                    0,
-                    0,
-                    0,
-                    state->M*Dataset::current().cubeEdgeLength,
-                    state->M*Dataset::current().cubeEdgeLength,
-                    GL_RGB,
-                    GL_UNSIGNED_BYTE,
-                    texData.data());
 
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Viewer::calcLeftUpperTexAbsPx() {
     window->forEachOrthoVPDo([this](ViewportOrtho & orthoVP) {
-        const auto fov = orthoVP.texture.usedSizeInCubePixels;
-        const CoordOfCube currentPosition_dc = viewerState.currentPosition.cube(Dataset::current().cubeEdgeLength, Dataset::current().magnification);
-        const auto xy = orthoVP.viewportType == VIEWPORT_XY;
-        const auto xz = orthoVP.viewportType == VIEWPORT_XZ;
-        const auto zy = orthoVP.viewportType == VIEWPORT_ZY;
-        orthoVP.texture.leftUpperPxInAbsPx = (currentPosition_dc - CoordOfCube{(xy || xz) * state->M / 2, (xy || zy) * state->M / 2, (xz || zy) * state->M / 2}).cube2Global(Dataset::current().cubeEdgeLength, Dataset::current().magnification);
-        if (orthoVP.viewportType == VIEWPORT_ARBITRARY) {
-            auto & arbVP = static_cast<ViewportArb&>(orthoVP);
-            arbVP.leftUpperPxInAbsPx_float = floatCoordinate{viewerState.currentPosition} - (orthoVP.v1 - orthoVP.v2) * 0.5 * fov * Dataset::current().magnification;// broken arb slicing depends on this
-            arbVP.texture.leftUpperPxInAbsPx = arbVP.leftUpperPxInAbsPx_float;
+        for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+            const auto fov = orthoVP.texture[layerId].usedSizeInCubePixels;
+            const CoordOfCube currentPosition_dc = viewerState.currentPosition.cube(Dataset::datasets[layerId].cubeEdgeLength, Dataset::datasets[layerId].magnification);
+            const auto xy = orthoVP.viewportType == VIEWPORT_XY;
+            const auto xz = orthoVP.viewportType == VIEWPORT_XZ;
+            const auto zy = orthoVP.viewportType == VIEWPORT_ZY;
+            orthoVP.texture[layerId].leftUpperPxInAbsPx = (currentPosition_dc - CoordOfCube{(xy || xz) * state->M / 2, (xy || zy) * state->M / 2, (xz || zy) * state->M / 2}).cube2Global(Dataset::datasets[layerId].cubeEdgeLength, Dataset::datasets[layerId].magnification);
+            if (orthoVP.viewportType == VIEWPORT_ARBITRARY) {
+                auto & arbVP = static_cast<ViewportArb&>(orthoVP);
+                arbVP.leftUpperPxInAbsPx_float = floatCoordinate{viewerState.currentPosition} - (orthoVP.v1 - orthoVP.v2) * 0.5 * fov * Dataset::datasets[layerId].magnification;// broken arb slicing depends on this
+                arbVP.texture[layerId].leftUpperPxInAbsPx = arbVP.leftUpperPxInAbsPx_float;
+            }
         }
     });
 }
 
 void Viewer::calcDisplayedEdgeLength() {
     window->forEachOrthoVPDo([](ViewportOrtho & vpOrtho){
-        float voxelV1X = Dataset::current().scale.componentMul(vpOrtho.v1).length() / Dataset::current().scale.x;
-        float voxelV2X = std::abs(Dataset::current().scale.componentMul(vpOrtho.v2).length()) / Dataset::current().scale.x;
+        for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+            const auto & layer = Dataset::datasets[layerId];
+            auto & texture = vpOrtho.texture[layerId];
+            float voxelV1X = layer.scale.componentMul(vpOrtho.v1).length() / layer.scale.x;
+            float voxelV2X = std::abs(layer.scale.componentMul(vpOrtho.v2).length()) / layer.scale.x;
 
-        vpOrtho.texture.texUsedX = vpOrtho.texture.usedSizeInCubePixels / vpOrtho.texture.size * vpOrtho.texture.FOV / voxelV1X;
-        vpOrtho.texture.texUsedY = vpOrtho.texture.usedSizeInCubePixels / vpOrtho.texture.size * vpOrtho.texture.FOV / voxelV2X;
+            texture.texUsedX = texture.usedSizeInCubePixels / texture.size * texture.FOV / voxelV1X;
+            texture.texUsedY = texture.usedSizeInCubePixels / texture.size * texture.FOV / voxelV2X;
 
-        vpOrtho.displayedIsoPx = Dataset::current().scale.x * 0.5 * vpOrtho.texture.usedSizeInCubePixels * vpOrtho.texture.FOV * Dataset::current().magnification;// FOV is within current mag
-        const auto dataPx = vpOrtho.texture.usedSizeInCubePixels * vpOrtho.texture.FOV * Dataset::current().magnification;
-        vpOrtho.screenPxXPerDataPx = vpOrtho.edgeLength / dataPx * voxelV1X;
-        vpOrtho.screenPxYPerDataPx = vpOrtho.edgeLength / dataPx * voxelV2X;
+            vpOrtho.displayedIsoPx = layer.scale.x * 0.5 * texture.usedSizeInCubePixels * texture.FOV * layer.magnification;// FOV is within current mag
+            const auto dataPx = texture.usedSizeInCubePixels * texture.FOV * layer.magnification;
+            vpOrtho.screenPxXPerDataPx = vpOrtho.edgeLength / dataPx * voxelV1X;
+            vpOrtho.screenPxYPerDataPx = vpOrtho.edgeLength / dataPx * voxelV2X;
 
-        vpOrtho.displayedlengthInNmX = Dataset::current().scale.componentMul(vpOrtho.v1).length() * (vpOrtho.texture.texUsedX / vpOrtho.texture.texUnitsPerDataPx);
-        vpOrtho.displayedlengthInNmY = Dataset::current().scale.componentMul(vpOrtho.v2).length() * (vpOrtho.texture.texUsedY / vpOrtho.texture.texUnitsPerDataPx);
+            vpOrtho.displayedlengthInNmX = layer.scale.componentMul(vpOrtho.v1).length() * (texture.texUsedX / texture.texUnitsPerDataPx);
+            vpOrtho.displayedlengthInNmY = layer.scale.componentMul(vpOrtho.v2).length() * (texture.texUsedY / texture.texUnitsPerDataPx);
+        }
     });
 }
 
 void Viewer::zoom(const float factor) {
+    const auto & texture = viewportXY->texture[0];// FIXME
     const bool reachedHighestMag = Dataset::current().magnification == Dataset::current().highestAvailableMag;
     const bool reachedLowestMag = Dataset::current().magnification == Dataset::current().lowestAvailableMag;
-    const bool reachedMinZoom = viewportXY->texture.FOV * factor > VPZOOMMIN && reachedHighestMag;
-    const bool reachedMaxZoom = viewportXY->texture.FOV * factor < VPZOOMMAX && reachedLowestMag;
-    const bool magUp = viewportXY->texture.FOV == VPZOOMMIN && factor > 1 && !reachedHighestMag;
-    const bool magDown = viewportXY->texture.FOV == 0.5 && factor < 1 && !reachedLowestMag;
+    const bool reachedMinZoom = texture.FOV * factor > VPZOOMMIN && reachedHighestMag;
+    const bool reachedMaxZoom = texture.FOV * factor < VPZOOMMAX && reachedLowestMag;
+    const bool magUp = texture.FOV == VPZOOMMIN && factor > 1 && !reachedHighestMag;
+    const bool magDown = texture.FOV == 0.5 && factor < 1 && !reachedLowestMag;
 
     const auto updateFOV = [this](const float newFOV) {
-        window->forEachOrthoVPDo([&newFOV](ViewportOrtho & orthoVP) { orthoVP.texture.FOV = newFOV; });
+        window->forEachOrthoVPDo([&newFOV](ViewportOrtho & orthoVP) {
+            for (auto & elem : orthoVP.texture) {
+                elem.FOV = newFOV;
+            }
+        });
     };
     auto newMag = Dataset::current().magnification;
     if (reachedMinZoom) {
@@ -797,9 +783,9 @@ void Viewer::zoom(const float factor) {
     } else if (reachedMaxZoom) {
         updateFOV(VPZOOMMAX);
     } else if (state->viewerState->datasetMagLock) {
-        updateFOV(viewportXY->texture.FOV * factor > VPZOOMMIN ? VPZOOMMIN :
-                  viewportXY->texture.FOV * factor < VPZOOMMAX ? VPZOOMMAX :
-                  viewportXY->texture.FOV * factor);
+        updateFOV(texture.FOV * factor > VPZOOMMIN ? VPZOOMMIN :
+                  texture.FOV * factor < VPZOOMMAX ? VPZOOMMAX :
+                  texture.FOV * factor);
     } else if (magUp) {
         newMag *= 2;
         updateFOV(0.5);
@@ -808,7 +794,7 @@ void Viewer::zoom(const float factor) {
         updateFOV(VPZOOMMIN);
     } else {
         const float zoomMax = Dataset::current().magnification == Dataset::current().lowestAvailableMag ? VPZOOMMAX : 0.5;
-        updateFOV(std::max(std::min(viewportXY->texture.FOV * factor, static_cast<float>(VPZOOMMIN)), zoomMax));
+        updateFOV(std::max(std::min(texture.FOV * factor, static_cast<float>(VPZOOMMIN)), zoomMax));
     }
 
     if (newMag != Dataset::current().magnification) {
@@ -820,7 +806,9 @@ void Viewer::zoom(const float factor) {
 
 void Viewer::zoomReset() {
     state->viewer->window->forEachOrthoVPDo([](ViewportOrtho & orthoVP){
-        orthoVP.texture.FOV = 1;
+        for (auto & elem : orthoVP.texture) {
+            elem.FOV = 1;
+        }
     });
     recalcTextureOffsets();
     emit zoomChanged();
@@ -835,7 +823,9 @@ bool Viewer::updateDatasetMag(const int mag) {
         }
         Dataset::current().magnification = mag;
         window->forEachOrthoVPDo([mag](ViewportOrtho & orthoVP) {
-            orthoVP.texture.texUnitsPerDataPx = 1.f / state->viewerState->texEdgeLength / mag;
+            for (auto & elem : orthoVP.texture) {// FIXME should only be 1 layer
+                elem.texUnitsPerDataPx = 1.f / state->viewerState->texEdgeLength / mag;
+            }
         });
     }
     //clear the viewports
@@ -898,7 +888,7 @@ void Viewer::run() {
                     const auto globalCoord = pair.first.cube2Global(gpucubeedge, Dataset::current().magnification);
                     const auto cubeCoord = globalCoord.cube(Dataset::current().cubeEdgeLength, Dataset::current().magnification);
                     state->protectCube2Pointer.lock();
-                    const auto * ptr = Coordinate2BytePtr_hash_get_or_fail((layer.isOverlayData ? state->Oc2Pointer : state->Dc2Pointer)[int_log(Dataset::current().magnification)], cubeCoord);
+                    const auto * ptr = Coordinate2BytePtr_hash_get_or_fail(state->cube2Pointer[layer.isOverlayData][int_log(Dataset::current().magnification)], cubeCoord);
                     state->protectCube2Pointer.unlock();
                     if (ptr != nullptr) {
                         layer.cubeSubArray(ptr, Dataset::current().cubeEdgeLength, gpucubeedge, pair.first, pair.second);
@@ -923,16 +913,14 @@ void Viewer::run() {
     window->updateTitlebar(); //display changes after filename
 }
 
-void Viewer::applyTextureFilterSetting(const GLint texFiltering) {
+void Viewer::applyTextureFilterSetting(const QOpenGLTexture::Filter texFiltering) {
     window->forEachOrthoVPDo([&texFiltering](ViewportOrtho & orthoVP) {
-        orthoVP.texture.textureFilter = texFiltering;
-        if (orthoVP.texture.texHandle != 0) {// 0 is an invalid tex id
-            orthoVP.makeCurrent();
-            glBindTexture(GL_TEXTURE_2D, orthoVP.texture.texHandle);
-            // Set the parameters for the texture.
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texFiltering);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texFiltering);
+        for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+            if (!Dataset::datasets[layerId].isOverlay()) {
+                orthoVP.texture[layerId].textureFilter = texFiltering;
+            }
         }
+        orthoVP.resetTexture();
     });
     glBindTexture(GL_TEXTURE_2D, 0);
 }
@@ -1100,46 +1088,49 @@ void Viewer::recalcTextureOffsets() {
     calcLeftUpperTexAbsPx();
 
     window->forEachOrthoVPDo([&](ViewportOrtho & orthoVP) {
-        float midX = orthoVP.texture.texUnitsPerDataPx;
-        float midY = orthoVP.texture.texUnitsPerDataPx;
-        float xFactor = 0.5 * orthoVP.texture.texUsedX;
-        float yFactor = 0.5 * orthoVP.texture.texUsedY;
-        if (orthoVP.viewportType == VIEWPORT_XY) {
-            midX *= state->viewerState->currentPosition.x - orthoVP.texture.leftUpperPxInAbsPx.x;
-            midY *= state->viewerState->currentPosition.y - orthoVP.texture.leftUpperPxInAbsPx.y;
-        } else if (orthoVP.viewportType == VIEWPORT_XZ) {
-            midX *= state->viewerState->currentPosition.x - orthoVP.texture.leftUpperPxInAbsPx.x;
-            midY *= state->viewerState->currentPosition.z - orthoVP.texture.leftUpperPxInAbsPx.z;
-        } else if (orthoVP.viewportType == VIEWPORT_ZY) {
-            midX *= state->viewerState->currentPosition.z - orthoVP.texture.leftUpperPxInAbsPx.z;
-            midY *= state->viewerState->currentPosition.y - orthoVP.texture.leftUpperPxInAbsPx.y;
-        } else {
-            const auto texUsed = orthoVP.texture.usedSizeInCubePixels / orthoVP.texture.size;
-            midX = 0.5 * texUsed;
-            midY = 0.5 * texUsed;
+        for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+            auto & texture = orthoVP.texture[layerId];
+            float midX = texture.texUnitsPerDataPx;
+            float midY = texture.texUnitsPerDataPx;
+            float xFactor = 0.5 * texture.texUsedX;
+            float yFactor = 0.5 * texture.texUsedY;
+            if (orthoVP.viewportType == VIEWPORT_XY) {
+                midX *= state->viewerState->currentPosition.x - texture.leftUpperPxInAbsPx.x;
+                midY *= state->viewerState->currentPosition.y - texture.leftUpperPxInAbsPx.y;
+            } else if (orthoVP.viewportType == VIEWPORT_XZ) {
+                midX *= state->viewerState->currentPosition.x - texture.leftUpperPxInAbsPx.x;
+                midY *= state->viewerState->currentPosition.z - texture.leftUpperPxInAbsPx.z;
+            } else if (orthoVP.viewportType == VIEWPORT_ZY) {
+                midX *= state->viewerState->currentPosition.z - texture.leftUpperPxInAbsPx.z;
+                midY *= state->viewerState->currentPosition.y - texture.leftUpperPxInAbsPx.y;
+            } else {
+                const auto texUsed = texture.usedSizeInCubePixels / texture.size;
+                midX = 0.5 * texUsed;
+                midY = 0.5 * texUsed;
+            }
+            // Calculate the vertices in texture coordinates
+            // mid really means current pos inside the texture, in texture coordinates, relative to the texture origin 0., 0.
+    //        if (orthoVP.viewportType != VIEWPORT_ARBITRARY) {
+                texture.texLUx = midX - xFactor;
+                texture.texLUy = midY + yFactor;
+                texture.texRUx = midX + xFactor;
+                texture.texRUy = texture.texLUy;
+                texture.texRLx = texture.texRUx;
+                texture.texRLy = midY - yFactor;
+                texture.texLLx = texture.texLUx;
+                texture.texLLy = texture.texRLy;
+    //        } else {// arb should use the entirety of (a specific part) of the texture
+    //            const auto texUsed = 1;texture.fovPixel / texture.size * texture.FOV;
+    //            texture.texLUx = 0;
+    //            texture.texLUy = texUsed;
+    //            texture.texRUx = texUsed;
+    //            texture.texRUy = texUsed;
+    //            texture.texRLx = texUsed;
+    //            texture.texRLy = 0;
+    //            texture.texLLx = 0;
+    //            texture.texLLy = 0;
+    //        }
         }
-        // Calculate the vertices in texture coordinates
-        // mid really means current pos inside the texture, in texture coordinates, relative to the texture origin 0., 0.
-//        if (orthoVP.viewportType != VIEWPORT_ARBITRARY) {
-            orthoVP.texture.texLUx = midX - xFactor;
-            orthoVP.texture.texLUy = midY + yFactor;
-            orthoVP.texture.texRUx = midX + xFactor;
-            orthoVP.texture.texRUy = orthoVP.texture.texLUy;
-            orthoVP.texture.texRLx = orthoVP.texture.texRUx;
-            orthoVP.texture.texRLy = midY - yFactor;
-            orthoVP.texture.texLLx = orthoVP.texture.texLUx;
-            orthoVP.texture.texLLy = orthoVP.texture.texRLy;
-//        } else {// arb should use the entirety of (a specific part) of the texture
-//            const auto texUsed = 1;orthoVP.texture.fovPixel / orthoVP.texture.size * orthoVP.texture.FOV;
-//            orthoVP.texture.texLUx = 0;
-//            orthoVP.texture.texLUy = texUsed;
-//            orthoVP.texture.texRUx = texUsed;
-//            orthoVP.texture.texRUy = texUsed;
-//            orthoVP.texture.texRLx = texUsed;
-//            orthoVP.texture.texRLy = 0;
-//            orthoVP.texture.texLLx = 0;
-//            orthoVP.texture.texLLy = 0;
-//        }
     });
 }
 

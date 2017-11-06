@@ -62,7 +62,8 @@ void annotationFileLoad(const QString & filename, const bool mergeSkeleton, cons
             if (match.hasMatch()) {
                 if (!Dataset::current().overlay) {
                     Dataset::current().overlay = true;
-                    Loader::Controller::singleton().enableOverlay();
+                    // TODO add overlay layer of Heidelbrain dataset to datasets
+//                    Loader::Controller::singleton().enableOverlay();
                 }
                 nonExtraFiles.insert(archive.getCurrentFileName());
                 QuaZipFile file(&archive);

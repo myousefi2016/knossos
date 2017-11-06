@@ -90,8 +90,8 @@ public:
     float displayedlengthInNmY;
 
     char * viewPortData;
-    viewportTexture texture;
-    float screenPxXPerDataPxForZoomFactor(const float zoomFactor) const { return edgeLength / (displayedEdgeLenghtXForZoomFactor(zoomFactor) / texture.texUnitsPerDataPx); }
+    std::vector<viewportTexture> texture{decltype(texture)(2)};// FIXME legacy
+    float screenPxXPerDataPxForZoomFactor(const float zoomFactor) const { return edgeLength / (displayedEdgeLenghtXForZoomFactor(zoomFactor) / texture[0].texUnitsPerDataPx); }// FIXME
     virtual float displayedEdgeLenghtXForZoomFactor(const float zoomFactor) const;
 
 public slots:

@@ -35,8 +35,8 @@ ViewportArb::ViewportArb(QWidget *parent, ViewportType viewportType) : ViewportO
 }
 
 float ViewportArb::displayedEdgeLenghtXForZoomFactor(const float zoomFactor) const {
-    float result = displayedIsoPx / static_cast<float>(texture.size);
-    return (std::floor((result * zoomFactor) / 2. / texture.texUnitsPerDataPx) * texture.texUnitsPerDataPx)*2;
+    float result = displayedIsoPx / static_cast<float>(texture[0].size);// FIXME
+    return (std::floor((result * zoomFactor) / 2. / texture[0].texUnitsPerDataPx) * texture[0].texUnitsPerDataPx)*2;
 }
 
 void ViewportArb::hideVP() {
@@ -77,7 +77,7 @@ void ViewportArb::updateOverlayTexture() {
             viewportView[y][x][3] = std::get<3>(color);
         }
     }
-    glBindTexture(GL_TEXTURE_2D, texture.overlayHandle);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, texData.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
+    texture[1].texHandle.bind();
+    texture[1].texHandle.setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, texData.data());
+    texture[1].texHandle.release();
 }

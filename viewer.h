@@ -237,7 +237,7 @@ public slots:
     void userMoveClear();
     void recalcTextureOffsets();
     void calcDisplayedEdgeLength();
-    void applyTextureFilterSetting(const GLint texFiltering);
+    void applyTextureFilterSetting(const QOpenGLTexture::Filter texFiltering);
     void run();
     void loader_notify(const UserMoveType userMoveType = USERMOVE_NEUTRAL, const floatCoordinate & direction = {0, 0, 0});
     void defaultDatasetLUT();

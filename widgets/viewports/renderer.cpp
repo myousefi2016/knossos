@@ -587,8 +587,8 @@ void ViewportOrtho::renderViewportFast() {
 
     //z component of vp vectors specifies portion of scale to apply
     const auto zScaleIncrement = !arb ? scale - 1 : 0;
-    const float hfov = texture.FOV * fov / (1 + zScaleIncrement * std::abs(v1.z));
-    const float vfov = texture.FOV * fov / (1 + zScaleIncrement * std::abs(v2.z));
+    const float hfov = texture[0].FOV * fov / (1 + zScaleIncrement * std::abs(v1.z));// FIXME
+    const float vfov = texture[0].FOV * fov / (1 + zScaleIncrement * std::abs(v2.z));
     viewMatrix.scale(width() / hfov, height() / vfov);
     const auto cameraPos = floatCoordinate{cpos} + n;
     viewMatrix.lookAt(cameraPos, cpos, v2);
@@ -734,10 +734,12 @@ void ViewportOrtho::renderViewport(const RenderOptions &options) {
                   , center.x, center.y, center.z
                   , v2.x, v2.y, v2.z);// negative up vectors, because origin is at the top
     };
-    auto slice = [&](auto texhandle, floatCoordinate offset = {}){
+    auto slice = [&](auto & texture, floatCoordinate offset = {}){
         if (!options.nodePicking) {
             glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, texhandle);
+            texture.texHandle.bind();
+            std::vector<char> texData(4 * std::pow(state->viewerState->texEdgeLength, 2), 0);
+            texture.texHandle.setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, texData.data());
             glPushMatrix();
             glTranslatef(isoCurPos.x + offset.x, isoCurPos.y + offset.y, isoCurPos.z + offset.z);
             glBegin(GL_QUADS);
@@ -760,7 +762,7 @@ void ViewportOrtho::renderViewport(const RenderOptions &options) {
                            -dataPxX * v1.z + dataPxY * v2.z);
             glEnd();
             glPopMatrix();
-            glBindTexture(GL_TEXTURE_2D, 0);
+            texture.texHandle.release();
             glDisable(GL_TEXTURE_2D);
         }
     };
@@ -773,7 +775,7 @@ void ViewportOrtho::renderViewport(const RenderOptions &options) {
     glPolygonMode(GL_FRONT, GL_FILL);
 
     if (!options.nodePicking && state->viewerState->layerVisibility[0]) {
-        slice(texture.texHandle);
+        slice(texture[0]);
     }
 
     glEnable(GL_DEPTH_TEST);
@@ -793,10 +795,10 @@ void ViewportOrtho::renderViewport(const RenderOptions &options) {
 
     if (!options.nodePicking) {
         if (state->viewerState->layerVisibility[0]) {
-            slice(texture.texHandle, n);
+            slice(texture[0], n);
         }
         if (options.drawOverlay && state->viewerState->layerVisibility[1]) {
-            slice(texture.overlayHandle, n);
+            //slice(texture[1], n);
         }
     }
 
@@ -1805,30 +1807,31 @@ void Viewport3D::renderArbitrarySlicePane(ViewportOrtho & vp, const RenderOption
     const float dataPxX = vp.displayedIsoPx;
     const float dataPxY = vp.displayedIsoPx;
 
-    for (auto layer : {std::make_pair(static_cast<bool>(state->viewerState->layerVisibility[0]), vp.texture.texHandle), std::make_pair(state->viewerState->layerVisibility[1] && options.drawOverlay, vp.texture.overlayHandle)}) {
-        if (layer.first) {
+    for (int layerId{0}; layerId < Dataset::datasets.size(); ++layerId) {
+        if (state->viewerState->layerVisibility[layerId] && (Dataset::datasets[layerId].isOverlay() || !options.drawOverlay)) {
             state->viewer->vpGenerateTexture(vp);// update texture before use
-            glBindTexture(GL_TEXTURE_2D, layer.second);
+            auto & texture = vp.texture[layerId];
+            texture.texHandle.bind();
             glBegin(GL_QUADS);
                 glNormal3i(vp.n.x, vp.n.y, vp.n.z);
-                glTexCoord2f(vp.texture.texLUx, vp.texture.texLUy);
+                glTexCoord2f(texture.texLUx, texture.texLUy);
                 glVertex3f(-dataPxX * vp.v1.x - dataPxY * vp.v2.x,
                            -dataPxX * vp.v1.y - dataPxY * vp.v2.y,
                            -dataPxX * vp.v1.z - dataPxY * vp.v2.z);
-                glTexCoord2f(vp.texture.texRUx, vp.texture.texRUy);
+                glTexCoord2f(texture.texRUx, texture.texRUy);
                 glVertex3f( dataPxX * vp.v1.x - dataPxY * vp.v2.x,
                             dataPxX * vp.v1.y - dataPxY * vp.v2.y,
                             dataPxX * vp.v1.z - dataPxY * vp.v2.z);
-                glTexCoord2f(vp.texture.texRLx, vp.texture.texRLy);
+                glTexCoord2f(texture.texRLx, texture.texRLy);
                 glVertex3f( dataPxX * vp.v1.x + dataPxY * vp.v2.x,
                             dataPxX * vp.v1.y + dataPxY * vp.v2.y,
                             dataPxX * vp.v1.z + dataPxY * vp.v2.z);
-                glTexCoord2f(vp.texture.texLLx, vp.texture.texLLy);
+                glTexCoord2f(texture.texLLx, texture.texLLy);
                 glVertex3f(-dataPxX * vp.v1.x + dataPxY * vp.v2.x,
                            -dataPxX * vp.v1.y + dataPxY * vp.v2.y,
                            -dataPxX * vp.v1.z + dataPxY * vp.v2.z);
             glEnd();
-            glBindTexture (GL_TEXTURE_2D, 0);
+            texture.texHandle.release();
         }
     }
 }

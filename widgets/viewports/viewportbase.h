@@ -33,6 +33,7 @@
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLFunctions_1_4>
 #include <QOpenGLShaderProgram>
+#include <QOpenGLTexture>
 #include <QOpenGLWidget>
 #include <QPushButton>
 #include <QToolButton>
@@ -54,9 +55,8 @@ constexpr const int DEFAULT_VP_SIZE = 350;
 
 struct viewportTexture {
     //Handles for OpenGl
-    uint texHandle{0};
-    GLint textureFilter{GL_LINEAR};
-    uint overlayHandle{0};
+    QOpenGLTexture texHandle{QOpenGLTexture::Target2D};
+    QOpenGLTexture::Filter textureFilter{QOpenGLTexture::Nearest};
 
     //The absPx coordinate of the upper left corner of the texture actually stored in *texture
     floatCoordinate leftUpperPxInAbsPx;

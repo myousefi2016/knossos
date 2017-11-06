@@ -320,6 +320,13 @@ bool DatasetLoadWidget::loadDataset(const boost::optional<bool> loadOverlay, QUr
     }
     Dataset::datasets = layers;
 
+    state->mainWindow->forEachOrthoVPDo([](auto & vp){
+        vp.resliceNecessary = decltype(vp.resliceNecessary)(static_cast<std::size_t>(Dataset::datasets.size()));
+        vp.texture = decltype(vp.texture)(static_cast<std::size_t>(Dataset::datasets.size()));
+        vp.resetTexture();
+    });
+    state->viewerState->layerVisibility = std::vector<bool>(Dataset::datasets.size(), true);
+
     state->viewer->resizeTexEdgeLength(cubeEdgeLen, state->M);
 
     applyGeometrySettings();
