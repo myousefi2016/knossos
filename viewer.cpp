@@ -1230,10 +1230,13 @@ void Viewer::resizeTexEdgeLength(const int cubeEdge, const int superCubeEdge, co
         qDebug() << QString("cubeEdge = %1, sCubeEdge = %2, newTex = %3 (%4)").arg(cubeEdge).arg(superCubeEdge).arg(newTexEdgeLength).arg(state->viewerState->texEdgeLength).toStdString().c_str();
         viewerState.texEdgeLength = newTexEdgeLength;
         viewerState.layerVisibility = std::vector<bool>(Dataset::datasets.size(), true);
-        window->forEachOrthoVPDo([layerCount](ViewportOrtho & vp) {
-            vp.resliceNecessary = decltype(vp.resliceNecessary)(layerCount);
-            vp.texture.texHandle = decltype(vp.texture.texHandle)(layerCount);
-        });
+        if (layerCount != viewportXY->texture.texHandle.size()) {
+            viewerState.layerVisibility = std::vector<bool>(layerCount, true);
+            window->forEachOrthoVPDo([layerCount](ViewportOrtho & vp) {
+                vp.resliceNecessary = decltype(vp.resliceNecessary)(layerCount);
+                vp.texture.texHandle = decltype(vp.texture.texHandle)(layerCount);
+            });
+        }
         window->resetTextureProperties();
         window->forEachOrthoVPDo([](ViewportOrtho & vp) {
             vp.resetTexture();
